@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0b0d16">
+<meta name="description" content="치즈와 턱시도, 두 고양이가 밤의 골목에서 편지를 배달하는 3D 웹 게임">
+<title>$GODOT_PROJECT_NAME</title>
+<style>
+:root {
+	--night: #0b0d16;
+	--night-2: #161a2c;
+	--ink: #efe6d8;
+	--ink-dim: #b9b2a6;
+	--amber: #f0b04c;
+	--danger: #ff9c8a;
+}
+html, body {
+	margin: 0;
+	padding: 0;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	overscroll-behavior: none;
+	background: var(--night);
+	color: var(--ink);
+	font-family: "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Noto Sans CJK KR", system-ui, sans-serif;
+	-webkit-tap-highlight-color: transparent;
+	-webkit-user-select: none;
+	user-select: none;
+}
+#canvas {
+	display: block;
+	position: fixed;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	touch-action: none;
+	outline: none;
+	background: var(--night);
+}
+#canvas:focus { outline: none; }
+.screen {
+	position: fixed;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 16px;
+	box-sizing: border-box;
+	background:
+		radial-gradient(circle at 82% 18%, rgba(255, 235, 190, 0.9) 0 26px, rgba(255, 220, 160, 0.18) 27px 60px, transparent 61px),
+		linear-gradient(180deg, #070912 0%, #121629 55%, #1c1d2c 100%);
+	z-index: 10;
+	overflow-y: auto;
+}
+.screen[hidden] { display: none; }
+.card {
+	width: min(560px, 100%);
+	text-align: center;
+	padding: 28px 24px;
+	border-radius: 18px;
+	background: rgba(11, 13, 22, 0.78);
+	box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+	box-sizing: border-box;
+}
+h1 {
+	margin: 0 0 4px;
+	font-size: clamp(28px, 6vw, 44px);
+	letter-spacing: 0.01em;
+	font-weight: 800;
+}
+.sub { margin: 0 0 14px; color: var(--amber); font-size: 18px; }
+.goal { margin: 0 0 20px; line-height: 1.6; color: var(--ink); }
+button {
+	font: inherit;
+	font-size: 20px;
+	font-weight: 700;
+	min-width: 180px;
+	min-height: 52px;
+	padding: 10px 28px;
+	border: 0;
+	border-radius: 12px;
+	background: var(--ink);
+	color: #17171f;
+	cursor: pointer;
+}
+button:hover, button:focus-visible { background: #ffdca0; outline: 3px solid var(--amber); outline-offset: 2px; }
+.controls {
+	margin: 20px 0 0;
+	padding: 0;
+	list-style: none;
+	font-size: 14px;
+	line-height: 1.7;
+	color: var(--ink-dim);
+}
+.controls b { color: var(--ink); font-weight: 700; }
+.note { margin: 14px 0 0; font-size: 13px; color: var(--ink-dim); }
+.portrait-hint { display: none; color: var(--amber); }
+@media (orientation: portrait) and (pointer: coarse) {
+	.portrait-hint { display: block; }
+}
+#loading-text { margin: 0 0 14px; font-size: 18px; }
+progress {
+	width: min(420px, 100%);
+	height: 10px;
+	appearance: none;
+	-webkit-appearance: none;
+	border: 0;
+	border-radius: 6px;
+	background: #2a2e44;
+	overflow: hidden;
+}
+progress::-webkit-progress-bar { background: #2a2e44; }
+progress::-webkit-progress-value { background: var(--amber); }
+progress::-moz-progress-bar { background: var(--amber); }
+#error-title { color: var(--danger); margin: 0 0 10px; font-size: 24px; }
+#error-text { white-space: pre-line; line-height: 1.6; margin: 0 0 10px; }
+</style>
+$GODOT_HEAD_INCLUDE
+</head>
+<body>
+<canvas id="canvas" tabindex="0">이 브라우저는 HTML5 canvas를 지원하지 않습니다.</canvas>
+
+<section id="screen-start" class="screen" aria-labelledby="start-title">
+	<div class="card">
+		<h1 id="start-title">Midnight Cat Delivery</h1>
+		<p class="sub">밤, 고양이의 또 다른 하루</p>
+		<p class="goal">치즈와 턱시도가 밤의 골목을 건너<br>302호 창문까지 편지를 배달합니다.</p>
+		<button id="btn-start" type="button">시작하기</button>
+		<p class="note portrait-hint">휴대폰은 가로 화면으로 돌려서 플레이하세요.</p>
+		<ul class="controls">
+			<li><b>PC</b> WASD 이동 · Shift 달리기 · Space 길게 눌렀다 떼서 점프</li>
+			<li>E 편지 · Tab 고양이 교체 · Q 길 안내 · R 복귀 · Esc 일시정지</li>
+			<li>게임 화면을 클릭하면 마우스로 시점 회전 (오른쪽 버튼 드래그도 가능)</li>
+			<li><b>휴대폰</b> 가로 화면 · 왼쪽 스틱 이동 · 오른쪽 JUMP / LETTER / CAT / ROUTE</li>
+		</ul>
+		<p class="note" id="size-note"></p>
+	</div>
+</section>
+
+<section id="screen-loading" class="screen" hidden aria-live="polite">
+	<div class="card">
+		<p id="loading-text">게임을 불러오는 중…</p>
+		<progress id="loading-bar"></progress>
+	</div>
+</section>
+
+<section id="screen-error" class="screen" hidden role="alert">
+	<div class="card">
+		<h2 id="error-title">게임을 시작하지 못했어요</h2>
+		<p id="error-text"></p>
+		<p class="note">새로고침해서 다시 시도해 주세요. 계속 실패하면 최신 Chrome · Edge · Firefox · Safari에서 열어 주세요.</p>
+		<button id="btn-reload" type="button">새로고침</button>
+	</div>
+</section>
+
+<script src="$GODOT_URL"></script>
+<script>
+const GODOT_CONFIG = $GODOT_CONFIG;
+const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
+
+(function () {
+	'use strict';
+	const startScreen = document.getElementById('screen-start');
+	const loadingScreen = document.getElementById('screen-loading');
+	const errorScreen = document.getElementById('screen-error');
+	const loadingText = document.getElementById('loading-text');
+	const loadingBar = document.getElementById('loading-bar');
+	const canvas = document.getElementById('canvas');
+	let running = false;
+
+	function show(screen) {
+		for (const s of [startScreen, loadingScreen, errorScreen]) {
+			s.hidden = s !== screen;
+		}
+	}
+
+	function showError(message) {
+		running = false;
+		document.getElementById('error-text').textContent = message;
+		show(errorScreen);
+		document.getElementById('btn-reload').focus();
+	}
+
+	function describe(err) {
+		if (err instanceof Error) {
+			return err.message;
+		}
+		return typeof err === 'string' ? err : '알 수 없는 오류가 발생했습니다.';
+	}
+
+	function mb(bytes) {
+		return (bytes / (1024 * 1024)).toFixed(1);
+	}
+
+	document.getElementById('btn-reload').addEventListener('click', () => window.location.reload());
+	canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+	if (window.location.protocol === 'file:') {
+		showError('파일을 직접 열면(file://) 웹 게임을 실행할 수 없습니다.\n로컬 HTTP 서버(예: python3 tools/serve_web.py)로 열거나 배포된 HTTPS 주소에서 열어 주세요.');
+		return;
+	}
+	if (typeof Engine === 'undefined') {
+		showError('게임 엔진 파일을 불러오지 못했습니다.\n네트워크 연결을 확인하거나 배포 파일(index.js, index.wasm, index.pck)이 함께 올라가 있는지 확인해 주세요.');
+		return;
+	}
+
+	const sizes = GODOT_CONFIG.fileSizes || {};
+	const total = Object.values(sizes).reduce((a, b) => a + b, 0);
+	if (total > 0) {
+		document.getElementById('size-note').textContent = '처음 시작할 때 약 ' + mb(total) + ' MB를 내려받습니다.';
+	}
+
+	const missing = Engine.getMissingFeatures({ threads: GODOT_THREADS_ENABLED });
+	if (missing.length !== 0) {
+		showError('이 브라우저에서 필요한 기능을 사용할 수 없습니다:\n' + missing.join('\n'));
+		return;
+	}
+
+	const engine = new Engine(GODOT_CONFIG);
+
+	window.addEventListener('error', (e) => {
+		const msg = String((e && e.message) || '');
+		if (!running || /RuntimeError|Aborted|abort|unreachable/i.test(msg)) {
+			showError('게임 실행 중 오류가 발생했습니다.\n' + msg);
+		}
+	});
+	window.addEventListener('unhandledrejection', (e) => {
+		if (!running) {
+			showError(describe(e.reason));
+		}
+	});
+	// Keep the page from scrolling or moving focus while the game owns the keyboard.
+	window.addEventListener('keydown', (e) => {
+		if (running && [' ', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+			e.preventDefault();
+		}
+	});
+
+	function tryFullscreen() {
+		if (!window.matchMedia('(pointer: coarse)').matches) {
+			return;
+		}
+		const el = document.documentElement;
+		if (el.requestFullscreen) {
+			el.requestFullscreen({ navigationUI: 'hide' }).then(() => {
+				if (screen.orientation && screen.orientation.lock) {
+					screen.orientation.lock('landscape').catch(() => {});
+				}
+			}).catch(() => {});
+		}
+	}
+
+	function start() {
+		tryFullscreen();
+		show(loadingScreen);
+		loadingText.textContent = '게임 파일을 내려받는 중…';
+		engine.startGame({
+			onProgress: function (current, totalBytes) {
+				if (current > 0 && totalBytes > 0 && current < totalBytes) {
+					loadingBar.max = totalBytes;
+					loadingBar.value = current;
+					loadingText.textContent = '게임 파일을 내려받는 중… ' + mb(current) + ' / ' + mb(totalBytes) + ' MB';
+				} else {
+					// Byte counts are unknown or complete: show an indeterminate bar, no fake percentage.
+					loadingBar.removeAttribute('value');
+					loadingText.textContent = current > 0 ? '엔진을 초기화하는 중…' : '게임 파일을 내려받는 중…';
+				}
+			},
+			onExit: function (code) {
+				if (code !== 0) {
+					showError('게임이 예기치 않게 종료되었습니다. (종료 코드 ' + code + ')');
+				}
+			},
+		}).then(() => {
+			running = true;
+			startScreen.remove();
+			loadingScreen.hidden = true;
+			canvas.focus();
+		}, (err) => showError(describe(err)));
+	}
+
+	document.getElementById('btn-start').addEventListener('click', start, { once: true });
+	show(startScreen);
+	document.getElementById('btn-start').focus();
+}());
+</script>
+</body>
+</html>

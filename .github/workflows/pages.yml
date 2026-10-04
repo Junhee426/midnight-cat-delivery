@@ -1,0 +1,84 @@
+name: Web build & GitHub Pages
+
+# Builds the Godot Web export and deploys it to GitHub Pages.
+# Deploys only from pushes to main (or a manual run on main); other branches and
+# pull requests never reach the deploy job.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  # Must match the engine the project is made with and the export templates.
+  GODOT_VERSION: "4.5.1"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Cache Godot and Web export templates
+        id: godot-cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/godot
+            ~/.local/share/godot/export_templates/${{ env.GODOT_VERSION }}.stable
+          key: godot-${{ env.GODOT_VERSION }}-linux-web-templates
+
+      - name: Install Godot ${{ env.GODOT_VERSION }} and Web templates
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          mkdir -p ~/godot
+          curl -fsSL -o "$RUNNER_TEMP/godot.zip" "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q "$RUNNER_TEMP/godot.zip" -d ~/godot
+          mv ~/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64 ~/godot/godot
+          tpl=~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          mkdir -p "$tpl"
+          curl -fsSL -o "$RUNNER_TEMP/templates.tpz" "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          # Only the single-threaded Web templates are needed.
+          unzip -q -j "$RUNNER_TEMP/templates.tpz" 'templates/web_nothreads_*' 'templates/version.txt' -d "$tpl"
+          rm -f "$RUNNER_TEMP/godot.zip" "$RUNNER_TEMP/templates.tpz"
+
+      - name: Check engine and template versions match
+        run: |
+          set -euo pipefail
+          ~/godot/godot --headless --version | tee /dev/stderr | grep -q "^${GODOT_VERSION}.stable"
+          test "$(cat ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/version.txt)" = "${GODOT_VERSION}.stable"
+
+      - name: Import, smoke test, Web export and export checks
+        run: GODOT="$HOME/godot/godot" tools/build_web.sh
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: builds/web
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+      - name: Show the deployed URL
+        run: echo "Deployed to ${{ steps.deployment.outputs.page_url }}" >> "$GITHUB_STEP_SUMMARY"
