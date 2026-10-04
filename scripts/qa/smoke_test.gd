@@ -105,6 +105,8 @@ func _platform_id() -> String:
 	return "ground" if i < 0 else AlleyWorld.ROUTE[i].id
 
 
+## True only if the cat ends up standing on the floor at `target` (height included),
+## so a fall off the route can never count as "arrived".
 func _walk_to(target: Vector3, tol := 0.08, run := false, max_frames := 1200) -> bool:
 	if run:
 		Input.action_press(&"sprint")
@@ -112,14 +114,15 @@ func _walk_to(target: Vector3, tol := 0.08, run := false, max_frames := 1200) ->
 		var d := target - player.global_position
 		d.y = 0.0
 		var dist := d.length()
-		if dist < tol:
+		if dist < tol or player.global_position.y < target.y - 0.6:
 			break
 		var want := minf(dist * 4.0, 1.0)
 		_move_world(d, maxf(want, 0.42))
 		await get_tree().physics_frame
 	_stop()
 	await _frames(20)
-	return _flat(player.global_position, target) < tol * 2.5
+	return _flat(player.global_position, target) < tol * 2.5 \
+		and absf(player.global_position.y - target.y) < 0.25 and player.is_on_floor()
 
 
 ## Charge while standing, then release while steering toward `target` with air control.
@@ -323,27 +326,38 @@ func _test_fall_recovery() -> void:
 		"letter state stays consistent after the fall (still carried, not left in the air)")
 
 
+## Each step must succeed before the next one runs: a failed step aborts the route
+## instead of producing a chain of unrelated failures.
 func _test_route() -> void:
 	print("-- route (real movement + jumps)")
-	_check(await _walk_to(Vector3(1.75, 0.0, -2.2)), "approach the low box")
-	_check(await _jump_to(Vector3(1.75, 0.5, -3.2), "box", 26), "box")
-	_check(await _walk_to(Vector3(1.95, 0.5, -3.3)), "box edge next to the wall")
-	_check(await _jump_to(Vector3(2.55, 1.3, -3.9), "wall", 30), "wall")
-	_check(await _walk_to(Vector3(2.55, 1.3, -8.0), 0.08, false), "walk along the wall top")
-	_check(_platform_id() == "wall", "still on the wall after walking along it")
-	_check(await _jump_to(Vector3(3.33, 2.1, -8.0), "ac", 32), "AC unit")
+	if not _check(await _walk_to(Vector3(1.75, 0.0, -2.2)), "approach the low box"):
+		return
+	if not await _jump_to(Vector3(1.75, 0.5, -3.2), "box", 26):
+		return
+	if not _check(await _walk_to(Vector3(1.95, 0.5, -3.3)), "box edge next to the wall"):
+		return
+	if not await _jump_to(Vector3(2.55, 1.3, -3.9), "wall", 30):
+		return
+	if not _check(await _walk_to(Vector3(2.55, 1.3, -8.0), 0.08, false), "walk along the wall top"):
+		return
+	if not await _jump_to(Vector3(3.33, 2.1, -8.0), "ac", 32):
+		return
 
 	# Pause mid-route: no movement, no delivery, held jump must not fire on resume.
+	# Esc is ignored for 350 ms (real time) after any state change, and --fixed-fps runs
+	# game time much faster than real time, so wait that out first.
+	await _real_wait(450)
 	await _action(&"pause")
 	await _frames(3)
-	_check(world.state == AlleyWorld.State.PAUSED and get_tree().paused, "Esc/pause action pauses the game")
+	if not _check(world.state == AlleyWorld.State.PAUSED and get_tree().paused, "Esc/pause action pauses the game"):
+		return
 	var p := player.global_position
 	_move_world(Vector3(0, 0, -1))
 	Input.action_press(&"jump")
 	await _frames(30)
 	_check(player.global_position.distance_to(p) < 0.001, "no movement while paused")
 	_stop()
-	await _real_wait(400)
+	await _real_wait(450)
 	world.hud.resume_pressed.emit()
 	await _frames(25)
 	_check(world.state == AlleyWorld.State.PLAYING, "resume button resumes")
@@ -353,11 +367,13 @@ func _test_route() -> void:
 	_stop()
 	await _frames(20)
 	_check(player.jump_count == jc, "releasing a jump held through pause does not jump")
-	await _walk_to(Vector3(3.37, 2.1, -8.2))
+	if not _check(await _walk_to(Vector3(3.37, 2.1, -8.2)), "back on the AC unit after the pause"):
+		return
 
-	_check(await _jump_to(Vector3(3.43, 2.9, -9.5), "ledge", 34), "narrow ledge")
-	_check(await _walk_to(Vector3(3.43, 2.9, -12.75), 0.08), "walk along the narrow ledge")
-	_check(_platform_id() == "ledge", "still on the ledge after walking along it")
+	if not await _jump_to(Vector3(3.43, 2.9, -9.5), "ledge", 34):
+		return
+	if not _check(await _walk_to(Vector3(3.43, 2.9, -12.75), 0.08), "walk along the narrow ledge"):
+		return
 
 	# Focus loss while charging: pauses, releases input, no jump after resuming.
 	Input.action_press(&"jump")
@@ -368,17 +384,22 @@ func _test_route() -> void:
 	await _frames(2)
 	_check(world.state == AlleyWorld.State.PAUSED and not Input.is_action_pressed(&"jump"),
 		"focus loss pauses and releases held inputs")
-	await _real_wait(400)
+	await _real_wait(450)
 	world.hud.resume_pressed.emit()
 	await _frames(30)
-	_check(player.jump_count == jc and not player.charging and _platform_id() == "ledge",
-		"no pending jump fires after focus returns")
+	if not _check(player.jump_count == jc and not player.charging and _platform_id() == "ledge",
+			"no pending jump fires after focus returns"):
+		return
 
-	_check(await _jump_to(Vector3(3.15, 3.6, -13.75), "sign", 28), "sign")
-	_check(await _walk_to(Vector3(3.2, 3.6, -13.8)), "sign position")
-	_check(await _jump_to(Vector3(3.3, 4.3, -15.0), "sill", 36), "302 window sill")
+	if not await _jump_to(Vector3(3.15, 3.6, -13.75), "sign", 28):
+		return
+	if not _check(await _walk_to(Vector3(3.2, 3.6, -13.8)), "sign position"):
+		return
+	if not await _jump_to(Vector3(3.3, 4.3, -15.0), "sill", 36):
+		return
 
-	_check(await _walk_to(Vector3(3.3, 4.3, -15.45)), "walk to the 302 window")
+	if not _check(await _walk_to(Vector3(3.3, 4.3, -15.45)), "walk to the 302 window"):
+		return
 	_check(world.can_deliver(), "delivery available in front of 302")
 	await _action(&"interact")
 	await _frames(90)
@@ -457,6 +478,21 @@ func _test_touch() -> void:
 	await _frames(3)
 	_check(world.cat_kind != kind, "CAT button switches cats")
 
+	# Two fingers on JUMP: only the first one owns the button.
+	jc = player.jump_count
+	_touch(10, jump, true)
+	await _frames(12)
+	_touch(11, jump + Vector2(6, 4), true)
+	await _frames(2)
+	_touch(11, jump + Vector2(6, 4), false)
+	await _frames(6)
+	_check(t.jump_held and player.charging and player.jump_count == jc,
+		"lifting a second finger from JUMP does not release the first finger's charge")
+	_touch(10, jump, false)
+	await _frames(3)
+	_check(player.jump_count == jc + 1 and not t.jump_held, "lifting the owning JUMP finger jumps exactly once")
+	await _frames(50)
+
 	# Cancel while charging: input is dropped without jumping.
 	jc = player.jump_count
 	_touch(4, jump, true)
@@ -496,6 +532,37 @@ func _test_touch() -> void:
 		await _frames(3)
 	_check(world.state == AlleyWorld.State.PLAYING, "touching Resume resumes")
 	_test_touch_layout(t)
+	await _test_portrait_block(t)
+
+
+## Portrait phone: the rotate notice covers the pause menu, so its buttons must be dead.
+func _test_portrait_block(t: TouchControls) -> void:
+	var real := get_tree().root.size
+	world.pause_game()
+	await _frames(2)
+	get_tree().root.size = Vector2i(720, 1280)
+	await _frames(3)
+	var restart_btn: Button = null
+	for b: Button in world.hud._buttons:
+		if b.text == "처음부터" and b.is_visible_in_tree():
+			restart_btn = b
+	_check(world.hud.is_portrait_blocked(), "portrait phone shows the rotate notice")
+	_check(world.hud.get_touch_buttons().is_empty(), "no HUD button can be pressed behind the rotate notice")
+	var run: Variant = world.get("_run_id")
+	if restart_btn:
+		var c := restart_btn.get_global_rect().get_center()
+		_touch(30, c, true)
+		_touch(30, c, false)
+	world.hud.restart_pressed.emit()
+	world.hud.start_pressed.emit()
+	await _frames(3)
+	_check(world.state == AlleyWorld.State.PAUSED and world.get("_run_id") == run,
+		"touch or signal cannot restart/start the game behind the rotate notice")
+	get_tree().root.size = real
+	await _frames(3)
+	_check(not world.hud.is_portrait_blocked(), "landscape again removes the notice")
+	world.resume_game()
+	await _frames(3)
 
 
 func _test_touch_layout(t: TouchControls) -> void:
@@ -538,6 +605,28 @@ func _test_restart() -> void:
 	_check(not world.has_letter and not world.delivered and world._letter.visible and world._window_light.light_energy == 0.0,
 		"restart resets letter and window")
 	_check(player.global_position.distance_to(AlleyWorld.SPAWN) < 0.2, "restart puts the cat at the start")
+
+	# Route hint on screen while restarting: nothing may stay visible.
+	world._show_route()
+	_check(world._beam.visible, "ROUTE shows the guide beam")
+	world.pause_game()
+	await _frames(2)
+	world.hud.restart_pressed.emit()
+	await _frames(3)
+	var leftovers := world._markers.filter(func(m): return m.visible).size() + (1 if world._beam.visible else 0)
+	_check(leftovers == 0 and world._marker_left == 0.0, "restart clears route markers and beam (%d left)" % leftovers)
+
+	# Restart in the middle of the delivery light-up: the old animation must not keep writing.
+	world.has_letter = true
+	world._deliver()
+	await _frames(15)
+	world.hud.restart_pressed.emit()
+	await _frames(150)
+	_check(world._window_glass.emission_energy_multiplier == 0.0 and world._window_light.light_energy == 0.0
+		and not world._window_light.visible and world._window_glass.albedo_color.r < 0.1
+		and world._room_label.modulate.is_equal_approx(Color(0.9, 0.85, 0.7)),
+		"restart during the delivery animation keeps the window unlit after the old tween's duration")
+	_check(world.state == AlleyWorld.State.PLAYING, "no stale completion screen after restarting mid-delivery")
 
 
 func _finish() -> void:

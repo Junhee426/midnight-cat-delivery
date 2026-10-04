@@ -196,7 +196,10 @@ async function desktop(browser) {
 	check(Math.abs(angDiff(h.cam_yaw, yaw0)) > 0.5 && !h.captured, 'right-button drag turns the camera without pointer capture', { dyaw: +angDiff(h.cam_yaw, yaw0).toFixed(2) });
 
 	// Letter: drive there with the keyboard, then E.
-	await kbWalkTo(page, -2.2 + 0.35, -0.4 + 0.2, 0.15);
+	// Pickup works within 0.85 m of the letter, so aim near it with a tolerance that one rendered
+	// frame of travel (~0.4 m at 5 fps) cannot step over; a tight tolerance just oscillates.
+	const near = await kbWalkTo(page, -1.95, -0.3, 0.45, [], 60000);
+	console.log('        keyboard walk ended', +near.toFixed(2), 'm from the aim point (pickup range is checked below)');
 	s = await qa(page);
 	check(/편지 물기/.test(s.prompt), 'context prompt offers to take the letter', s.prompt);
 	await page.keyboard.press('KeyE');

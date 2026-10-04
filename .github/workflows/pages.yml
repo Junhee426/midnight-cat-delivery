@@ -1,10 +1,12 @@
 name: Web build & GitHub Pages
 
-# Builds the Godot Web export and deploys it to GitHub Pages.
-# Deploys only from pushes to main (or a manual run on main); other branches and
-# pull requests never reach the deploy job.
+# Builds and tests the Godot Web export, and deploys it to GitHub Pages.
+# Pull requests into main run the same build + tests but never deploy; the deploy job
+# runs only for pushes to main (or a manual run on main), after every test passed.
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   workflow_dispatch:
 
@@ -12,8 +14,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  # One deploy at a time; each pull request gets its own group so PR checks never queue behind it.
+  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'pages' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # Must match the engine the project is made with and the export templates.
@@ -22,7 +25,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
 
@@ -60,14 +63,43 @@ jobs:
       - name: Import, smoke test, Web export and export checks
         run: GODOT="$HOME/godot/godot" tools/build_web.sh
 
+      - name: Install Playwright Chromium (test tool only, not part of the game)
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/pw" --no-save --no-audit --no-fund playwright@1.56.1
+          "$RUNNER_TEMP/pw/node_modules/.bin/playwright" install --with-deps chromium
+
+      - name: Real-browser tests (start, keyboard/mouse, multitouch, errors)
+        env:
+          NODE_PATH: ${{ runner.temp }}/pw/node_modules
+          # A manual run also plays the whole delivery route (slow on CPU-rendered WebGL).
+          ONLY: ${{ github.event_name == 'workflow_dispatch' && 'desktop route mobile errors' || 'desktop mobile errors' }}
+        run: |
+          set -euo pipefail
+          python3 tools/serve_web.py --port 8060 > "$RUNNER_TEMP/serve.log" 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null http://localhost:8060/midnight-cat-delivery/ && break
+            sleep 1
+          done
+          node tools/browser_test.cjs http://localhost:8060/midnight-cat-delivery/ builds/qa
+
+      - name: Upload browser test screenshots and results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-qa
+          path: builds/qa
+          if-no-files-found: ignore
+
       - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v5
         with:
           path: builds/web
 
   deploy:
     needs: build
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
       pages: write

@@ -51,6 +51,8 @@ var _room_label: Label3D
 var _markers: Array[Node3D] = []
 var _beam: MeshInstance3D
 var _marker_left := 0.0
+var _deliver_tween: Tween
+var _run_id := 0
 var _was_captured := false
 var _last_toggle_ms := -10000
 var _js_callbacks: Array = []
@@ -113,7 +115,12 @@ func _ready() -> void:
 	else:
 		_set_state(State.TITLE)
 	if smoke_test:
-		var t: Node = load("res://scripts/qa/smoke_test.gd").new()
+		var script: GDScript = load("res://scripts/qa/smoke_test.gd")
+		if script == null or not script.can_instantiate():
+			printerr("SMOKE TEST FAILED: scripts/qa/smoke_test.gd did not load")
+			get_tree().quit(1)
+			return
+		var t: Node = script.new()
 		t.name = "SmokeTest"
 		add_child(t)
 
@@ -558,7 +565,22 @@ func _release_inputs() -> void:
 	player.reset_inputs()
 
 
+func _clear_route_hints() -> void:
+	_marker_left = 0.0
+	for m in _markers:
+		m.visible = false
+	_beam.visible = false
+
+
 func _start_new() -> void:
+	# Same gate as resume_game(): never start while the rotate-your-phone notice covers the screen.
+	if hud.is_portrait_blocked():
+		return
+	_run_id += 1
+	if _deliver_tween:
+		_deliver_tween.kill()
+		_deliver_tween = null
+	_clear_route_hints()
 	started = true
 	has_letter = false
 	delivered = false
@@ -573,7 +595,6 @@ func _start_new() -> void:
 	_window_light.light_energy = 0.0
 	_window_light.visible = false
 	_room_label.modulate = Color(0.9, 0.85, 0.7)
-	_marker_left = 0.0
 	player.visual.set_carrying(false)
 	player.respawn(SPAWN, 0.0)
 	_update_status()
@@ -582,6 +603,8 @@ func _start_new() -> void:
 
 
 func _on_start() -> void:
+	if hud.is_portrait_blocked():
+		return
 	if started and not delivered:
 		resume_game()
 	else:
@@ -715,7 +738,11 @@ func _deliver() -> void:
 	_letter.position = Vector3(3.45, 4.31, -15.15)
 	_letter.rotation = Vector3(0, -0.3, 0)
 	_window_light.visible = true
+	_clear_route_hints()
+	if _deliver_tween:
+		_deliver_tween.kill()
 	var tw := create_tween()
+	_deliver_tween = tw
 	tw.set_parallel(true)
 	tw.tween_property(_window_glass, "emission_energy_multiplier", 1.6, 1.2)
 	tw.tween_property(_window_glass, "albedo_color", Color(0.85, 0.6, 0.35), 1.2)
@@ -724,8 +751,9 @@ func _deliver() -> void:
 	hud.toast("배달 완료! 302호에 불이 켜졌어요", 3.0)
 	_update_status()
 	if not smoke_test:
+		var run := _run_id
 		get_tree().create_timer(2.2, false).timeout.connect(func():
-			if state == State.PLAYING and delivered:
+			if run == _run_id and state == State.PLAYING and delivered:
 				_set_state(State.COMPLETE))
 
 

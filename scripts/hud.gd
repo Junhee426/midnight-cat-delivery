@@ -264,6 +264,9 @@ func _build_overlays() -> void:
 
 ## Buttons that touch input may press (only the visible ones are considered).
 func get_touch_buttons() -> Array:
+	# The rotate notice covers everything: nothing behind it may be pressed.
+	if rotate_overlay != null and rotate_overlay.visible:
+		return []
 	return _buttons
 
 
