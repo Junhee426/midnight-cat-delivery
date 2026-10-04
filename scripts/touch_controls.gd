@@ -30,6 +30,7 @@ var ui_buttons: Callable
 
 var _touches := {}
 var _stick_index := -1
+var _jump_index := -1
 var _stick_origin := Vector2.ZERO
 var _stick_home := Vector2.ZERO
 var _layout := {}
@@ -66,6 +67,7 @@ func reset_touches() -> void:
 	var had_jump := jump_held
 	_touches.clear()
 	_stick_index = -1
+	_jump_index = -1
 	stick_vector = Vector2.ZERO
 	jump_held = false
 	run_on = false
@@ -160,9 +162,14 @@ func _on_touch(e: InputEventScreenTouch) -> void:
 			_touches[e.index] = {"role": role, "last": p}
 			match role:
 				&"jump":
-					jump_held = true
-					if player:
-						player.queue_jump_tap()
+					# One finger owns JUMP; extra fingers on the button are ignored (role "none").
+					if _jump_index == -1:
+						_jump_index = e.index
+						jump_held = true
+						if player:
+							player.queue_jump_tap()
+					else:
+						_touches[e.index] = {"role": &"none"}
 				&"run":
 					run_on = not run_on
 				&"stick":
@@ -192,6 +199,7 @@ func _release(index: int, pos: Vector2) -> void:
 			if is_instance_valid(b) and b.is_visible_in_tree() and not b.disabled and b.get_global_rect().has_point(pos):
 				b.pressed.emit()
 		&"jump":
+			_jump_index = -1
 			jump_held = false
 		&"stick":
 			_stick_index = -1

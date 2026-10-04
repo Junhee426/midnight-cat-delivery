@@ -46,8 +46,9 @@ python3 tools/serve_web.py                # http://localhost:8060/midnight-cat-d
 
 워크플로: `.github/workflows/pages.yml`
 
-- 트리거: `main` push 또는 수동 실행(workflow_dispatch). deploy 잡은 `refs/heads/main`에서만 실행되며 다른 브랜치·PR에서는 배포되지 않습니다.
-- build 잡(`contents: read`): Godot 4.5.1과 같은 버전의 Web 템플릿 설치(캐시) → 버전 일치 확인 → `tools/build_web.sh` → `builds/web` 업로드.
+- 트리거: `main` 대상 pull request(빌드·테스트만), `main` push, 수동 실행(workflow_dispatch). deploy 잡은 PR이 아닌 `refs/heads/main`에서만 실행되며 다른 브랜치·PR에서는 배포되지 않습니다.
+- build 잡(`contents: read`): Godot 4.5.1과 같은 버전의 Web 템플릿 설치(캐시) → 버전 일치 확인 → `tools/build_web.sh`(import·스모크 테스트·export·정적 검사) → Playwright Chromium으로 실제 브라우저 검사(`desktop mobile errors`; 수동 실행은 전체 배달 동선 `route`도 포함) → 스크린샷·결과를 `browser-qa` 아티팩트로 업로드 → (PR이 아니면) `builds/web` 업로드.
+  어느 단계든 실패하면 deploy 잡은 실행되지 않습니다.
 - deploy 잡(`pages: write`, `id-token: write`): build 성공 후 `github-pages` 환경에 배포하고 실제 URL을 출력합니다.
 - 토큰을 코드에 넣지 않습니다. GitHub가 제공하는 OIDC 인증만 씁니다.
 
