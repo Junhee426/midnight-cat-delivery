@@ -1,0 +1,11 @@
+# Godot editor/import cache and local runtime data
+.godot/
+.runtime/
+/builds/
+*.tmp
+# Engine binaries / export templates must not be committed
+*.tpz
+Godot_v*
+# OS files
+.DS_Store
+Thumbs.db
