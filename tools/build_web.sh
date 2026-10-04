@@ -8,6 +8,8 @@ GODOT="${GODOT:-godot}"
 
 "$GODOT" --version
 echo "== import"
+# On a fresh checkout (no .godot/) Godot logs "Error loading custom project font" once here:
+# the theme font is read at startup before this import creates it. Later steps load it normally.
 timeout 600 "$GODOT" --headless --path . --import
 echo "== smoke test"
 timeout 300 "$GODOT" --headless --path . --fixed-fps 60 --disable-vsync -- --smoke-test
