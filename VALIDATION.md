@@ -17,13 +17,13 @@
 | 단계 | 명령 | 결과 |
 | --- | --- | --- |
 | A. 엔진 로딩 | `godot --headless --path . --import` 후 실제 시작 장면(`scenes/main.tscn`) 실행 | 파싱/임포트 오류 없음 |
-| B·C. 엔진 내 자동 검사 | `godot --headless --path . --fixed-fps 60 --disable-vsync -- --smoke-test` | **82/82 통과**, 실패 시 exit 1 확인(초기 실행에서 실제로 exit 1) |
+| B·C. 엔진 내 자동 검사 | `godot --headless --path . --fixed-fps 60 --disable-vsync -- --smoke-test` | **85/85 통과**(2026-10-05 수정 후), 실패 시 exit 1 확인. 스모크 스크립트 로드 실패도 exit 1 |
 | D. Web export | `tools/build_web.sh` → `tools/check_web_export.sh builds/web` | 통과: HTML/JS/WASM/PCK 생성, 미치환 `$GODOT_` 없음, `GODOT_THREADS_ENABLED = false`, config의 `executable":"index"`(상대 경로), 서비스워커 없음, 루트 절대경로 없음 |
 | E-1. 실제 브라우저: 데스크톱 1280×800 | `ONLY=desktop node tools/browser_test.cjs` | 아래 표 |
 | E-2. 실제 브라우저: 전체 배달 동선 (모바일 가로 844×390, 터치) | `ONLY=route node tools/browser_test.cjs` | **20/20 통과** |
 | E-3. 실제 브라우저: 모바일 가로 844×390 멀티터치 | `ONLY=mobile node tools/browser_test.cjs` | 아래 표 |
 | E-4. 오류 화면 | `ONLY=errors BROKEN_BASE=… node tools/browser_test.cjs` | 아래 표 |
-| F. GitHub Actions / Pages | – | **미실행** (아래 참고) |
+| F. GitHub Actions / Pages | `.github/workflows/pages.yml` | 아래 “CI 이력” |
 
 ### B·C 엔진 검사 내용 (`scripts/qa/smoke_test.gd`)
 
@@ -75,6 +75,17 @@
 - `file://`로 열면 검은 화면 대신 “HTTP 서버로 열어 달라”는 안내와 새로고침 버튼
 - `index.pck`가 빠진 배포를 열면 “게임을 시작하지 못했어요” + 원인(`Failed loading file 'index.pck'`) + 새로고침 안내
 
+## CI 이력 (GitHub Actions, 실제 실행)
+
+| 실행 | 커밋 | 결과 | 내용 |
+| --- | --- | --- | --- |
+| #1 push main | `7acf818` | 실패 | 스모크 테스트 82개 중 14개 실패(Esc가 시작 후 실시간 350 ms 입력 보호에 걸려 무시되고 이후 연쇄 실패). 업로드·배포 안 됨 |
+| #2 PR | `a9c2e07` | 실패 | 스모크 85/85·모바일 브라우저 21/21 통과, 데스크톱 키보드 편지 접근이 저fps에서 맴돌아 3건 실패(테스트 정밀도 문제) |
+| #3 PR | `2693ee2` | 성공 | 스모크 85/85, export 검사, 브라우저 검사(desktop·mobile·errors) 통과 |
+| #4 push main | `96c03dc` | 성공 | build·deploy 성공, `github-pages` 환경 배포 |
+
+PR/수동 실행의 브라우저 검사는 소프트웨어 WebGL(GitHub 러너, GPU 없음)이며 약 5~7 fps입니다. 전체 배달 동선(`route`)은 수동 실행(workflow_dispatch)에서만 돌고, 이 CI에서는 아직 실행해 보지 않았습니다.
+
 ## 성능 (측정값 — 실제 기기 성능이 아님)
 
 이 컨테이너에는 GPU가 없어 Chromium이 WebGL을 **CPU(SwiftShader)로 그립니다**. 같은 환경에서 단순 WebGL2 clear 루프는 60 fps였고, 게임은 fill-rate에 묶입니다.
@@ -100,5 +111,5 @@
 - **실기기**: iPhone Safari, Android Chrome 실기기 터치·성능·회전은 확인하지 못했습니다(검증은 Chromium 모바일 에뮬레이션 + CDP 터치 이벤트).
 - **게임패드**: 매핑(왼쪽 스틱·A·X·Y·LB·RB·Back·Start·오른쪽 스틱 시점)은 구현했지만 실제 패드로 검증하지 않았습니다. 패드가 없을 때 축 입력은 0으로 안전하게 처리됩니다(엔진 검사에서 패드 없이 실행).
 - **실제 GPU 환경의 fps**, Firefox·Safari 데스크톱.
-- **GitHub Actions / Pages**: 워크플로는 작성·YAML 검증만 했고 실행하지 않았습니다. `main`에 push하지 않았으므로 배포 URL도 없습니다. 첫 배포 전 Settings → Pages → Source를 GitHub Actions로 바꿔야 합니다([WEB_SETUP.md](WEB_SETUP.md)).
+- **배포된 사이트 직접 열기**: 배포 잡은 성공했고 `github-pages` 환경에 `96c03dc`가 배포됐지만, 이 검사 환경은 `github.io` 접속이 막혀 있어 실제 URL을 열어 보지 못했습니다. 배포 URL 확인과 `tools/browser_test.cjs`를 배포 주소에 돌리는 일([WEB_SETUP.md](WEB_SETUP.md))이 남아 있습니다.
 - 고양이 모델은 참고 이미지의 색·무늬·비율을 맞춘 임시 절차적 메시이며 디자인을 정확히 재현한 것이 아닙니다.
